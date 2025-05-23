@@ -23,11 +23,6 @@ from tqdm import tqdm
 import os
 
 
-proxy_client = get_proxy_client("gen-ai-hub")
-gpt4_1_mini = ChatOpenAI(
-    proxy_model_name="gpt-4.1-mini", proxy_client=proxy_client, temperature=0
-)
-
 user_name = os.path.expanduser("~")
 if "joli13" in user_name:
     CONVERT_ONLY = True
@@ -38,12 +33,18 @@ if "joli13" in user_name:
         num_threads=8,
         device=AcceleratorDevice.CUDA
     )
+    gpt4_1_mini = None
 else:
-    CONVERT_ONLY = True
+    CONVERT_ONLY = False
     CONVERTED_DIR = "converted/"
     ANNOTATED_DIR = "annotated/"
     PDF_DIR = "pdfs/"
     accel_opts = AcceleratorOptions()
+
+    proxy_client = get_proxy_client("gen-ai-hub")
+    gpt4_1_mini = ChatOpenAI(
+        proxy_model_name="gpt-4.1-mini", proxy_client=proxy_client, temperature=0
+    )
 
 
 
