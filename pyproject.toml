@@ -17,6 +17,7 @@ dependencies = [
     "langchain>=0.3.25",
     "langchain-chroma>=0.1.2",
     "langchain-community>=0.3.21",
+    "langchain-docling>=0.2.0",
     "langchain-google-genai>=2.1.4",
     "langchain-openai>=0.3.16",
     "langgraph>=0.4.3",
