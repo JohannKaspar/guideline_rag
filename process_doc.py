@@ -10,6 +10,8 @@ from docling.document_converter import (
 )
 from docling.datamodel.pipeline_options import (
     PdfPipelineOptions,
+    AcceleratorOptions,
+    AcceleratorDevice
 )
 from docling.datamodel.base_models import InputFormat
 from docling_core.types.doc.document import PictureDescriptionData
@@ -28,6 +30,11 @@ from tqdm import tqdm
 #     proxy_model_name="gpt-4.1-mini", proxy_client=proxy_client, temperature=0
 # )
 
+accel_opts = AcceleratorOptions(
+    num_threads=8,
+    device=AcceleratorDevice.CUDA
+)
+
 pdf_opts = PdfPipelineOptions(
     do_ocr=True,
     do_table_structure=True,
@@ -35,6 +42,8 @@ pdf_opts = PdfPipelineOptions(
     generate_page_images=True,  # Seiten‐Renders erzeugen, damit Crops möglich sind
     generate_picture_images=True,
     generate_table_images=True,
+    accelerator_options = accel_opts
+
 )
 
 converter = DocumentConverter(
@@ -239,9 +248,8 @@ if __name__ == "__main__":
     import os
 
     CONVERT_ONLY = True
-
-
-
+    CONVERTED_DIR = "work/converted/"
+    ANNOTATED_DIR = "work/annotated/"
 
     with open("doc_hashes.csv", "r") as f:
         lines = [tuple(l.split(",")) for l in f.readlines()[1:]]
@@ -250,8 +258,8 @@ if __name__ == "__main__":
 
     todo_pdfs = []
 
-    annotated_pdfs = [hash_files.get(os.path.splitext(file)[0]) for file in os.listdir("annotated/") if file.endswith(".json")]
-    converted_pdfs = [hash_files.get(os.path.splitext(file)[0]) for file in os.listdir("converted/") if file.endswith(".json")]
+    annotated_pdfs = [hash_files.get(os.path.splitext(file)[0]) for file in os.listdir(ANNOTATED_DIR) if file.endswith(".json")]
+    converted_pdfs = [hash_files.get(os.path.splitext(file)[0]) for file in os.listdir(CONVERTED_DIR) if file.endswith(".json")]
     processed_pdfs = converted_pdfs + annotated_pdfs 
 
     awmf_guidelines = json.load(open("awmf.json", "r"))
