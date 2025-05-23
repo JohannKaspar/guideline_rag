@@ -31,9 +31,9 @@ gpt4_1_mini = ChatOpenAI(
 user_name = os.path.expanduser("~")
 if "joli13" in user_name:
     CONVERT_ONLY = True
-    CONVERTED_DIR = "work/converted/"
-    ANNOTATED_DIR = "work/annotated/"
-    PDF_DIR = "work/pdfs/"
+    CONVERTED_DIR = "work/guideilne_rag/converted/"
+    ANNOTATED_DIR = "work/guideilne_rag/annotated/"
+    PDF_DIR = "work/guideilne_rag/pdfs/"
     accel_opts = AcceleratorOptions(
         num_threads=8,
         device=AcceleratorDevice.CUDA
