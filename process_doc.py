@@ -26,9 +26,9 @@ import os
 user_name = os.path.expanduser("~")
 if "joli13" in user_name:
     CONVERT_ONLY = True
-    CONVERTED_DIR = "work/guideilne_rag/converted/"
-    ANNOTATED_DIR = "work/guideilne_rag/annotated/"
-    PDF_DIR = "work/guideilne_rag/pdfs/"
+    CONVERTED_DIR = "work/guideline_rag/converted/"
+    ANNOTATED_DIR = "work/guideline_rag/annotated/"
+    PDF_DIR = "work/guideline_rag/pdfs/"
     accel_opts = AcceleratorOptions(
         num_threads=8,
         device=AcceleratorDevice.CUDA
@@ -299,16 +299,17 @@ if __name__ == "__main__":
     for guideline in awmf_guidelines["records"]:
         for link in guideline["links"]:
             if link["type"] == "longVersion":
-                pdf_path = os.path.join(PDF_DIR, link["media"])
+                file_name = link["media"]
                 if CONVERT_ONLY:
-                    if pdf_path not in processed_pdfs:
-                        todo_pdfs.append(pdf_path)
+                    if file_name not in processed_pdfs:
+                        todo_pdfs.append(file_name)
                 else:
-                    if pdf_path not in annotated_pdfs:
-                        todo_pdfs.append(pdf_path)
+                    if file_name not in annotated_pdfs:
+                        todo_pdfs.append(file_name)
 
-    for pdf_path in tqdm(todo_pdfs):
+    for file_name in tqdm(todo_pdfs):
         try:
+            pdf_path = os.path.join(PDF_DIR, file_name)
             logging.info(f"Processing: {pdf_path}")
             file_hash = file_hashes.get(pdf_path)
             if file_hash and CONVERT_ONLY:
@@ -319,10 +320,10 @@ if __name__ == "__main__":
                 pdf_path=pdf_path, file_hash=file_hash, gpt4_1_mini=gpt4_1_mini
             )
             with open("doc_hashes.csv", "a") as f:
-                f.write(f"\n{doc_hash},{pdf_path}")
-            processed_pdfs.append(pdf_path)
+                f.write(f"\n{doc_hash},{file_name}")
+            processed_pdfs.append(file_name)
         except Exception as e:
             logging.error(f"Error processing {pdf_path}: {e}")
             with open("doc_hashes.csv", "a") as f:
-                f.write(f"\nERROR,{pdf_path}")
+                f.write(f"\nERROR,{file_name}")
             continue
