@@ -1,3 +1,4 @@
+import time
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from gen_ai_hub.proxy.core.proxy_clients import get_proxy_client
@@ -21,6 +22,9 @@ from io import BytesIO
 from pathlib import Path
 from tqdm import tqdm
 import os
+from multiprocessing import Pool
+import json
+import logging
 
 
 user_name = os.path.expanduser("~")
@@ -29,33 +33,71 @@ if "joli13" in user_name:
     CONVERTED_DIR = "work/guideline_rag/converted/"
     ANNOTATED_DIR = "work/guideline_rag/annotated/"
     PDF_DIR = "work/guideline_rag/pdfs/"
-    accel_opts = AcceleratorOptions(
-        num_threads=8,
-        device=AcceleratorDevice.CUDA
-    )
     gpt4_1_mini = None
 else:
     CONVERT_ONLY = False
     CONVERTED_DIR = "converted/"
     ANNOTATED_DIR = "annotated/"
     PDF_DIR = "pdfs/"
-    accel_opts = AcceleratorOptions()
-
     proxy_client = get_proxy_client("gen-ai-hub")
+
     gpt4_1_mini = ChatOpenAI(
-        proxy_model_name="gpt-4.1-mini", proxy_client=proxy_client, temperature=0
+        proxy_model_name="gpt-4.1-mini",
+        proxy_client=proxy_client,
+        temperature=0,
+        max_retries=1,
+        request_timeout=60,
     )
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[
+        logging.StreamHandler(),  # Output to console
+        logging.FileHandler("convert.log"),  # Output to log file
+    ],
+)
+
+with open("doc_hashes.csv", "r") as f:
+    lines = [tuple(l.split(",")) for l in f.readlines()[1:]]
+    file_hashes = {file_name.strip(): hash.strip() for (hash, file_name) in lines}
+    hash_files = {hash.strip(): file_name.strip() for (hash, file_name) in lines}
+
+todo_pdfs = []
+
+annotated_pdfs = [
+    hash_files.get(os.path.splitext(file)[0])
+    for file in os.listdir(ANNOTATED_DIR)
+    if file.endswith(".json")
+]
+converted_pdfs = [
+    hash_files.get(os.path.splitext(file)[0])
+    for file in os.listdir(CONVERTED_DIR)
+    if file.endswith(".json")
+]
+processed_pdfs = converted_pdfs + annotated_pdfs
+
+awmf_guidelines = json.load(open("awmf.json", "r"))
+for guideline in awmf_guidelines["records"]:
+    for link in guideline["links"]:
+        if link["type"] == "longVersion":
+            file_name = link["media"]
+            file_name = os.path.basename(file_name)
+            if CONVERT_ONLY:
+                if file_name not in processed_pdfs:
+                    todo_pdfs.append(file_name)
+            else:
+                if file_name not in annotated_pdfs:
+                    todo_pdfs.append(file_name)
 
 
 pdf_opts = PdfPipelineOptions(
-    do_ocr=True,
+    do_ocr=False,
     do_table_structure=True,
     do_picture_description=False,  # set to FALSE, will do this later
     generate_page_images=True,  # Seiten‐Renders erzeugen, damit Crops möglich sind
     generate_picture_images=True,
     generate_table_images=True,
-    accelerator_options = accel_opts
 )
 
 converter = DocumentConverter(
@@ -117,12 +159,17 @@ def annotate_pictures_remote(pictures, vlm, guideline_title=None):
 
     chain = prompt | vlm_with_retry | StrOutputParser()
 
-    # print(f"Annotating {len(image_data)} images...")
-    image_descriptions = chain.batch(
-        image_data,
-        return_only_outputs=True,
-        temperature=0,
-    )
+    image_descriptions = []
+    batch_size = 10  # Adjust batch size as needed
+    for i in range(0, len(image_data), batch_size):
+        sub_batch = image_data[i:i + batch_size]
+        image_descriptions.extend(chain.batch(
+            sub_batch,
+            return_only_outputs=True,
+            temperature=0,
+        ))
+        time.sleep(3)
+
 
     if any(len(r) == 0 for r in image_descriptions):
         print("WARNING: Some responses are empty.")
@@ -182,11 +229,16 @@ def get_correct_table_htmls(doc_object: DoclingDocument, vlm) -> dict[str, str]:
         return {}
 
     # print(f"Checking {len(batch_input)} tables...")
-    corrected_html_list = chain.batch(
-        batch_input,
-        return_only_outputs=True,
-        temperature=0,
-    )
+    corrected_html_list = []
+    batch_size = 10  # Adjust batch size as needed
+    for i in range(0, len(batch_input), batch_size):
+        sub_batch = batch_input[i:i + batch_size]
+        corrected_html_list.extend(chain.batch(
+            sub_batch,
+            return_only_outputs=True,
+            temperature=0,
+        ))
+        time.sleep(3)
 
     table_refs = [table.self_ref for table in doc_object.tables]
 
@@ -239,7 +291,7 @@ def process_doc(pdf_path: str, file_hash, gpt4_1_mini=None):
         filter_small_pictures(doc)
 
         file_path_converted = Path(
-            Path("converted/") / f"{doc.origin.binary_hash}.json"
+            Path(CONVERTED_DIR) / f"{doc.origin.binary_hash}.json"
         )
         doc.save_as_json(file_path_converted)
 
@@ -252,7 +304,7 @@ def process_doc(pdf_path: str, file_hash, gpt4_1_mini=None):
         update_table_htmls(doc, table_html_corrections)
 
         file_path_annotated = Path(
-            Path("annotated/") / f"{doc.origin.binary_hash}.json"
+            Path(ANNOTATED_DIR) / f"{doc.origin.binary_hash}.json"
         )
         doc.save_as_json(file_path_annotated)
 
@@ -261,69 +313,62 @@ def process_doc(pdf_path: str, file_hash, gpt4_1_mini=None):
     return doc.origin.binary_hash
 
 
-if __name__ == "__main__":
-    import json
-    import os
-    import logging
-
-    # Configure logging
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(),  # Output to console
-            logging.FileHandler("convert.log"),  # Output to log file
-        ],
-    )
-
-    with open("doc_hashes.csv", "r") as f:
-        lines = [tuple(l.split(",")) for l in f.readlines()[1:]]
-        file_hashes = {file_name.strip(): hash.strip() for (hash, file_name) in lines}
-        hash_files = {hash.strip(): file_name.strip() for (hash, file_name) in lines}
-
-    todo_pdfs = []
-
-    annotated_pdfs = [
-        hash_files.get(os.path.splitext(file)[0])
-        for file in os.listdir(ANNOTATED_DIR)
-        if file.endswith(".json")
-    ]
-    converted_pdfs = [
-        hash_files.get(os.path.splitext(file)[0])
-        for file in os.listdir(CONVERTED_DIR)
-        if file.endswith(".json")
-    ]
-    processed_pdfs = converted_pdfs + annotated_pdfs
-
-    awmf_guidelines = json.load(open("awmf.json", "r"))
-    for guideline in awmf_guidelines["records"]:
-        for link in guideline["links"]:
-            if link["type"] == "longVersion":
-                file_name = link["media"]
-                if CONVERT_ONLY:
-                    if file_name not in processed_pdfs:
-                        todo_pdfs.append(file_name)
-                else:
-                    if file_name not in annotated_pdfs:
-                        todo_pdfs.append(file_name)
-
-    for file_name in tqdm(todo_pdfs):
-        try:
-            pdf_path = os.path.join(PDF_DIR, file_name)
-            logging.info(f"Processing: {pdf_path}")
-            file_hash = file_hashes.get(pdf_path)
-            if file_hash and CONVERT_ONLY:
-                raise ValueError(
-                    f"File {pdf_path} already converted. Please remove the file or set CONVERT_ONLY to False."
-                )
-            doc_hash = process_doc(
-                pdf_path=pdf_path, file_hash=file_hash, gpt4_1_mini=gpt4_1_mini
+def process_file_name(file_name: str):
+    """
+    Wrapper so we can map() over todo_pdfs in parallel.
+    Returns (file_name, doc_hash, error)
+    """
+    pdf_path = os.path.join(PDF_DIR, file_name)
+    try:
+        logging.info(f"Processing: {pdf_path}")
+        file_hash = file_hashes.get(file_name)
+        if file_hash and CONVERT_ONLY:
+            raise ValueError(
+                f"File {pdf_path} already converted. "
+                f"Please remove it or set CONVERT_ONLY=False."
             )
-            with open("doc_hashes.csv", "a") as f:
-                f.write(f"\n{doc_hash},{file_name}")
-            processed_pdfs.append(file_name)
-        except Exception as e:
-            logging.error(f"Error processing {pdf_path}: {e}")
-            with open("doc_hashes.csv", "a") as f:
-                f.write(f"\nERROR,{file_name}")
-            continue
+        doc_hash = process_doc(
+            pdf_path=pdf_path, file_hash=file_hash, gpt4_1_mini=gpt4_1_mini
+        )
+        return file_name, doc_hash, None
+    except Exception as e:
+        logging.error(f"Error processing {pdf_path}: {e}")
+        err_str = f"{type(e).__name__}: {e}"
+        return file_name, None, err_str
+
+
+if __name__ == "__main__":
+    # for file_name in tqdm(todo_pdfs):
+    #     try:
+    #         pdf_path = os.path.join(PDF_DIR, file_name)
+    #         logging.info(f"Processing: {pdf_path}")
+    #         file_hash = file_hashes.get(file_name)
+    #         if file_hash and CONVERT_ONLY:
+    #             raise ValueError(
+    #                 f"File {pdf_path} already converted. Please remove the file or set CONVERT_ONLY to False."
+    #             )
+    #         doc_hash = process_doc(
+    #             pdf_path=pdf_path, file_hash=file_hash, gpt4_1_mini=gpt4_1_mini
+    #         )
+    #         with open("doc_hashes.csv", "a") as f:
+    #             f.write(f"\n{doc_hash},{file_name}")
+    #         processed_pdfs.append(file_name)
+    #     except Exception as e:
+    #         logging.error(f"Error processing {pdf_path}: {e}")
+    #         with open("doc_hashes.csv", "a") as f:
+    #             f.write(f"\nERROR,{file_name}")
+    #         continue
+
+    with Pool(processes=5) as pool:
+        for file_name, doc_hash, error in tqdm(
+            pool.imap_unordered(process_file_name, todo_pdfs),
+            total=len(todo_pdfs),
+            desc="Docs",
+        ):
+            if error is None:
+                with open("doc_hashes.csv", "a") as f:
+                    f.write(f"\n{doc_hash},{file_name}")
+                processed_pdfs.append(file_name)
+            else:
+                with open("doc_hashes.csv", "a") as f:
+                    f.write(f"\nERROR,{file_name}")
