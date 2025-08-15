@@ -6,11 +6,24 @@ dist/
 wheels/
 *.egg-info
 
+.vscode
+
 # Virtual environments
 .venv
-pdfs/
-.DS_Store
-pdfs/
-converted/
 
+# Data files
+pdfs/
+data/
+*.zip
+*.log
 *temp*
+chroma_db/
+archive/
+backup/
+
+# Exploratory code
+notebooks/
+legacy/
+
+# System files
+.DS_Store

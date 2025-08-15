@@ -1,7 +1,7 @@
 [project]
 name = "guideline-rag"
 version = "0.1.0"
-description = "Add your description here"
+description = "A Retrieval-Augmented Generation (RAG) system for medical guidelines"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -21,6 +21,7 @@ dependencies = [
     "langchain-docling>=0.2.0",
     "langchain-google-genai>=2.1.4",
     "langchain-openai>=0.3.16",
+    "langchain-qdrant>=0.2.0",
     "langgraph>=0.4.3",
     "numpy<2",
     "openai>=1.78.1",
@@ -35,4 +36,58 @@ dependencies = [
     "transformers>=4.51.3",
     "unstructured-ingest[pdf]>=1.0.28",
     "unstructured[pdf]>=0.17.2",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.0.0",
+    "pytest-mock>=3.12.0",
+    "pytest-asyncio>=0.23.0",
+    "responses>=0.24.0",
+    "factory-boy>=3.3.0",
+]
+dev = [
+    "guideline-rag[test]",
+    "ruff>=0.1.0",
+    "mypy>=1.8.0",
+]
+
+[project.scripts]
+guideline-rag = "src.main:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-fail-under=30",
+    "-v"
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
 ]
